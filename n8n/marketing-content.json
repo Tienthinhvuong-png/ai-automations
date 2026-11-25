@@ -1,0 +1,144 @@
+{
+  "name": "Marketing: tạo nội dung Facebook, YouTube, Zalo bằng Claude",
+  "nodes": [
+    {
+      "id": "a1f0c6c2-0001-4a5e-9d10-000000000001",
+      "name": "Chạy thử bằng tay",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "a1f0c6c2-0002-4a5e-9d10-000000000002",
+      "name": "Webhook nhận sản phẩm",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "5d1f3a52-7c4b-4c1e-9a7e-6b2f0e3c9a11",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "marketing-content",
+        "responseMode": "lastNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "a1f0c6c2-0003-4a5e-9d10-000000000003",
+      "name": "Chuẩn bị yêu cầu Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// Node \"Chuẩn bị yêu cầu Claude\": nhận sản phẩm (từ webhook hoặc chạy thử), tạo nội dung gửi Claude API.\n// ==== Sửa thông tin thương hiệu ở đây ====\nconst BRAND_NAME = 'Cửa hàng của anh';\nconst BRAND_VOICE = \"thân thiện, gần gũi, chuyên nghiệp, xưng 'mình' và gọi khách là 'bạn'\";\nconst MODEL = 'claude-opus-5-5';\nconst EFFORT = 'medium'; // low | medium | high\n\nconst SAMPLE = {\n  name: 'Bình giữ nhiệt inox 500ml',\n  description: 'Inox 304, giữ nóng và lạnh lâu, nắp chống tràn, nhỏ gọn bỏ vừa túi xách',\n  price: '189.000đ',\n  promotion: 'Mua 2 tặng 1 túi vải đến hết tháng 12',\n  target_customer: 'Dân văn phòng, sinh viên',\n  link: '',\n};\n\nconst SYSTEM = `Bạn là chuyên viên content marketing cho thương hiệu \"${BRAND_NAME}\" tại Việt Nam.\nGiọng văn: ${BRAND_VOICE}.\n\nViết bằng tiếng Việt có dấu, tự nhiên như người bán hàng thật, không sáo rỗng.\nChỉ dùng thông tin có trong mô tả sản phẩm. Không bịa thông số, cam kết, chứng nhận hay giá.\nKhông dùng từ ngữ bị cấm trong quảng cáo như \"tốt nhất\", \"số 1\", \"chữa khỏi\" nếu không có căn cứ.\n\nMỗi lần nhận một sản phẩm, bạn tạo:\n- 2 bài Facebook theo 2 góc khác nhau (ví dụ: nỗi đau của khách và lợi ích nổi bật). Mỗi bài 80 đến 150 chữ, có tiêu đề, lời kêu gọi hành động và 3 đến 5 hashtag.\n- Nội dung YouTube: tiêu đề dưới 70 ký tự có từ khóa chính, phần mô tả 100 đến 200 chữ, 5 đến 10 thẻ tag, và kịch bản YouTube Shorts 30 đến 45 giây gồm câu mở đầu giữ chân người xem trong 3 giây đầu và 3 đến 6 cảnh ngắn.\n- 1 tin nhắn Zalo gửi khách cũ, dưới 60 chữ, lịch sự, có lời mời rõ ràng.`;\n\nconst str = { type: 'string' };\nconst strList = { type: 'array', items: str };\nconst obj = (properties) => ({\n  type: 'object',\n  properties,\n  required: Object.keys(properties),\n  additionalProperties: false,\n});\n\nconst SCHEMA = obj({\n  facebook_posts: {\n    type: 'array',\n    items: obj({ headline: str, body: str, call_to_action: str, hashtags: strList }),\n  },\n  youtube: obj({\n    title: str,\n    description: str,\n    tags: strList,\n    shorts_script: obj({ hook: str, scenes: strList }),\n  }),\n  zalo_message: str,\n});\n\nconst FIELDS = [\n  ['name', 'Sản phẩm'],\n  ['description', 'Mô tả'],\n  ['price', 'Giá'],\n  ['promotion', 'Khuyến mãi'],\n  ['target_customer', 'Khách hàng mục tiêu'],\n  ['link', 'Link'],\n];\n\nreturn $input.all().map((item) => {\n  // Webhook đặt dữ liệu trong body; chạy thử bằng tay thì dùng sản phẩm mẫu.\n  const input = item.json.body ?? item.json;\n  const product = input && input.name ? input : SAMPLE;\n  if (!product.description) throw new Error(`Thiếu mô tả cho sản phẩm \"${product.name}\"`);\n\n  const userText = FIELDS.filter(([k]) => product[k])\n    .map(([k, label]) => `${label}: ${product[k]}`)\n    .join('\\n');\n\n  return {\n    json: {\n      product,\n      request: {\n        model: MODEL,\n        max_tokens: 16000,\n        system: SYSTEM,\n        messages: [{ role: 'user', content: userText }],\n        output_config: { effort: EFFORT, format: { type: 'json_schema', schema: SCHEMA } },\n        // Nếu model chính từ chối, API tự chạy lại trên model dự phòng phù hợp.\n        fallbacks: 'default',\n      },\n    },\n  };\n});\n"
+      }
+    },
+    {
+      "id": "a1f0c6c2-0004-4a5e-9d10-000000000004",
+      "name": "Gọi Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2026-10-21"
+            },
+            {
+              "name": "anthropic-beta",
+              "value": "server-side-fallback-2026-07-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 300000
+        }
+      }
+    },
+    {
+      "id": "a1f0c6c2-0005-4a5e-9d10-000000000005",
+      "name": "Đọc kết quả",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// Node \"Đọc kết quả\": lấy JSON nội dung từ phản hồi Claude, kèm bản xem nhanh để duyệt.\nconst products = $('Chuẩn bị yêu cầu Claude').all();\n\nreturn $input.all().map((item, i) => {\n  const res = item.json;\n  const product = products[i]?.json.product ?? {};\n\n  if (res.stop_reason === 'refusal') {\n    throw new Error(`Claude từ chối tạo nội dung cho \"${product.name}\"`);\n  }\n  if (res.stop_reason === 'max_tokens') {\n    throw new Error(`Kết quả cho \"${product.name}\" bị cắt ngang, hãy tăng max_tokens`);\n  }\n  const text = (res.content || []).find((b) => b.type === 'text')?.text;\n  if (!text) throw new Error('Phản hồi của Claude không có nội dung');\n  const content = JSON.parse(text);\n\n  const fb = content.facebook_posts\n    .map((p, n) => `FACEBOOK ${n + 1}: ${p.headline}\\n${p.body}\\n${p.call_to_action}\\n${p.hashtags.join(' ')}`)\n    .join('\\n\\n');\n  const yt = content.youtube;\n  const preview = [\n    `NỘI DUNG CHO: ${product.name}`,\n    fb,\n    `YOUTUBE: ${yt.title}\\n${yt.description}\\nTag: ${yt.tags.join(', ')}`,\n    `SHORTS:\\nMở đầu: ${yt.shorts_script.hook}\\n${yt.shorts_script.scenes.map((s, n) => `${n + 1}. ${s}`).join('\\n')}`,\n    `ZALO: ${content.zalo_message}`,\n  ].join('\\n\\n');\n\n  return {\n    json: {\n      product: product.name,\n      created_at: new Date().toISOString(),\n      model: res.model,\n      ...content,\n      preview,\n    },\n  };\n});\n"
+      }
+    }
+  ],
+  "connections": {
+    "Chạy thử bằng tay": {
+      "main": [
+        [
+          {
+            "node": "Chuẩn bị yêu cầu Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook nhận sản phẩm": {
+      "main": [
+        [
+          {
+            "node": "Chuẩn bị yêu cầu Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chuẩn bị yêu cầu Claude": {
+      "main": [
+        [
+          {
+            "node": "Gọi Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gọi Claude API": {
+      "main": [
+        [
+          {
+            "node": "Đọc kết quả",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
